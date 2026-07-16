@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberSecurity Traffic & Suricata Dashboard</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-theme">
+    <div class="glow-container">
+        <div class="glow-ball" id="glow-1"></div>
+        <div class="glow-ball" id="glow-2"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar glass">
+            <div class="sidebar-header">
+                <i class="fa-solid fa-shield-halved logo-icon"></i>
+                <h2>Aegis NetSec</h2>
+            </div>
+            
+            <div class="upload-section">
+                <h3>Unggah File Analisis</h3>
+                <div class="upload-dropzone" id="dropzone">
+                    <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                    <p class="dropzone-text">Seret & lepas file di sini atau</p>
+                    <label for="file-input" class="btn btn-primary btn-upload">Pilih File</label>
+                    <input type="file" id="file-input" accept=".pcap,.pcapng,.json,.log" style="display: none;">
+                    <p class="file-format-hint">Mendukung .pcap, .pcapng, eve.json, atau fast.log</p>
+                </div>
+                <div class="file-info-container" id="file-info-container" style="display: none;">
+                    <i class="fa-regular fa-file-code file-item-icon"></i>
+                    <div class="file-details">
+                        <span class="file-name" id="selected-file-name">filename.pcap</span>
+                        <span class="file-size" id="selected-file-size">0 KB</span>
+                    </div>
+                    <button class="btn-remove-file" id="btn-remove-file"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+
+            <div class="actions-section">
+                <h3>Ekspor Laporan</h3>
+                <div class="export-buttons">
+                    <button class="btn btn-secondary btn-export" id="btn-export-csv" disabled>
+                        <i class="fa-solid fa-file-csv"></i> Ekspor CSV
+                    </button>
+                    <button class="btn btn-secondary btn-export" id="btn-export-pdf" disabled>
+                        <i class="fa-solid fa-file-pdf"></i> Ekspor PDF
+                    </button>
+                </div>
+            </div>
+
+            <div class="status-section">
+                <div class="status-item">
+                    <span class="status-dot online"></span>
+                    <span class="status-label">Mesin Analisis Aktif</span>
+                </div>
+                <div class="status-info" id="scapy-status">
+                    <i class="fa-solid fa-circle-info"></i> Scapy Engine: Ready
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Content -->
+        <main class="main-content">
+            <header class="main-header glass">
+                <div class="header-title-container">
+                    <h1>Dashboard Analisis Keamanan Trafik</h1>
+                    <p class="header-subtitle">Unggah file pcap atau log Suricata untuk memulai investigasi visual</p>
+                </div>
+                <div class="active-file-display" id="active-file-display" style="display: none;">
+                    <span class="badge badge-file" id="file-badge">PCAP</span>
+                    <span class="active-filename" id="active-filename">test.pcap</span>
+                </div>
+            </header>
+
+            <!-- Loading Spinner overlays -->
+            <div class="loading-overlay" id="loading-overlay" style="display: none;">
+                <div class="spinner-container">
+                    <div class="spinner"></div>
+                    <p class="loading-text">Sedang menganalisis file...</p>
+                    <p class="loading-subtext">Ekstraksi trafik, IP, protokol, dan pencocokan IoC sedang berlangsung</p>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state glass" id="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <h2>Belum Ada Data yang Dianalisis</h2>
+                <p>Silakan unggah file packet capture (.pcap / .pcapng) atau log Suricata (eve.json / fast.log) menggunakan panel unggah di sebelah kiri untuk melihat ringkasan keamanan dan visualisasi trafik secara real-time.</p>
+                <div class="quick-test-section">
+                    <p class="quick-test-hint">Tidak memiliki file log? Gunakan file pengujian yang telah digenerate:</p>
+                    <div class="quick-test-buttons">
+                        <button class="btn btn-outline" onclick="loadMockFile('test.pcap')">Gunakan test.pcap (Trafik Jaringan)</button>
+                        <button class="btn btn-outline" onclick="loadMockFile('eve.json')">Gunakan eve.json (Alert Suricata)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Content Panels (Hidden initially) -->
+            <div class="dashboard-grid" id="dashboard-content" style="display: none;">
+                
+                <!-- Metrics Summary row -->
+                <section class="metrics-row">
+                    <div class="metric-card glass card-glow-purple">
+                        <div class="metric-icon bg-purple"><i class="fa-solid fa-network-wired"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-value" id="metric-1">-</span>
+                            <span class="metric-label" id="metric-label-1">Total Paket</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass card-glow-blue">
+                        <div class="metric-icon bg-blue"><i class="fa-solid fa-database"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-value" id="metric-2">-</span>
+                            <span class="metric-label" id="metric-label-2">Total Volume</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass card-glow-green">
+                        <div class="metric-icon bg-green"><i class="fa-solid fa-stopwatch"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-value" id="metric-3">-</span>
+                            <span class="metric-label" id="metric-label-3">Durasi</span>
+                        </div>
+                    </div>
+                    <div class="metric-card glass card-glow-red">
+                        <div class="metric-icon bg-red"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-value text-red" id="metric-4">0</span>
+                            <span class="metric-label" id="metric-label-4">Temuan Ancaman (IoC)</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Navigation Tabs -->
+                <div class="tabs-container glass">
+                    <button class="tab-btn active" data-tab="overview">
+                        <i class="fa-solid fa-chart-pie"></i> Distribusi Trafik
+                    </button>
+                    <button class="tab-btn" data-tab="timeline">
+                        <i class="fa-solid fa-timeline"></i> Garis Waktu Komunikasi
+                    </button>
+                    <button class="tab-btn" data-tab="alerts-tab" id="nav-alerts-tab" style="display: none;">
+                        <i class="fa-solid fa-bell-exclamation"></i> Alert Suricata
+                    </button>
+                    <button class="tab-btn" data-tab="iocs-tab">
+                        <i class="fa-solid fa-shield-virus"></i> Indikator Kompromi (IoC)
+                    </button>
+                </div>
+
+                <!-- Tab Contents -->
+                <div class="tab-content-container">
+                    
+                    <!-- Tab: Overview -->
+                    <div class="tab-pane active" id="overview">
+                        <div class="charts-row">
+                            <div class="chart-card glass">
+                                <h3 id="chart-title-1">Distribusi Protokol</h3>
+                                <div class="chart-wrapper">
+                                    <canvas id="protocolChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="chart-card glass">
+                                <h3 id="chart-title-2">Koneksi Paling Aktif (Top 10)</h3>
+                                <div class="chart-wrapper">
+                                    <canvas id="connectionChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Timeline -->
+                    <div class="tab-pane" id="timeline">
+                        <div class="chart-card glass width-full">
+                            <h3>Timeline Komunikasi Jaringan</h3>
+                            <div class="chart-wrapper timeline-wrapper">
+                                <canvas id="timelineChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Suricata Alerts -->
+                    <div class="tab-pane" id="alerts-tab">
+                        <div class="alert-layout">
+                            <div class="alert-stats-sidebar">
+                                <div class="chart-card glass">
+                                    <h3>Kategori Alert Utama</h3>
+                                    <div class="chart-wrapper-small">
+                                        <canvas id="alertCategoryChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="alert-table-container glass">
+                                <div class="table-header-tools">
+                                    <h3>Daftar Peringatan Keamanan (Suricata Alerts)</h3>
+                                    <div class="search-box">
+                                        <i class="fa-solid fa-magnifying-glass"></i>
+                                        <input type="text" id="alert-search" placeholder="Cari IP, signature, atau kategori...">
+                                    </div>
+                                </div>
+                                <div class="responsive-table">
+                                    <table class="data-table" id="alerts-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Waktu</th>
+                                                <th>Nama Aturan (Signature)</th>
+                                                <th>Bahaya</th>
+                                                <th>Sumber (Src IP)</th>
+                                                <th>Tujuan (Dst IP)</th>
+                                                <th>Prot.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="alerts-table-body">
+                                            <!-- Alert rows injected by JS -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="table-pagination">
+                                    <button class="btn btn-outline btn-xs" id="alert-prev">Prev</button>
+                                    <span id="alert-page-num">Halaman 1 dari 1</span>
+                                    <button class="btn btn-outline btn-xs" id="alert-next">Next</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: IoCs -->
+                    <div class="tab-pane" id="iocs-tab">
+                        <div class="chart-card glass width-full">
+                            <div class="table-header-tools">
+                                <div>
+                                    <h3>Indikator Kompromi (IoC) Terdeteksi</h3>
+                                    <p class="section-desc">Mencocokkan alamat IP atau kueri DNS dari lalu lintas jaringan dengan pangkalan data Threat Intelligence</p>
+                                </div>
+                            </div>
+                            <div class="responsive-table">
+                                <table class="data-table" id="iocs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Indikator (IP/Domain)</th>
+                                            <th>Tipe Ancaman</th>
+                                            <th>Tingkat Bahaya</th>
+                                            <th>Deskripsi Kasus</th>
+                                            <th>Jumlah Kecocokan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="iocs-table-body">
+                                        <!-- IoC rows injected by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="no-ioc-message" id="no-ioc-message" style="display: none;">
+                                <i class="fa-regular fa-circle-check ioc-safe-icon"></i>
+                                <p>Sangat Aman! Tidak ditemukan kecocokan alamat IP atau Domain dengan database IoC kami.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
