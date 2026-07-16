@@ -306,6 +306,9 @@ def parse_pcap(filepath):
 def parse_suricata_eve(filepath):
     alerts = []
     ip_counts = {}
+    dns_queries = {}
+    event_types = {}
+    connections_raw = {}
     severity_counts = {1: 0, 2: 0, 3: 0}
     signature_counts = {}
     timeline_raw = {}
@@ -343,10 +346,131 @@ def parse_suricata_eve(filepath):
                 except Exception:
                     continue
                     
-    # Now process the list of events
+    # Pre-parse timestamps to determine duration for dynamic binning
+    event_timestamps = []
+    for event in events:
+        ts_str = event.get("timestamp", "")
+        if not ts_str:
+            continue
+            
+        # Parse timezone offset safely
+        if '+' in ts_str:
+            ts_clean = ts_str.split('+')[0]
+        elif '-' in ts_str and ts_str.count('-') > 2:
+            last_dash = ts_str.rfind('-')
+            ts_clean = ts_str[:last_dash]
+        else:
+            ts_clean = ts_str
+            
+        try:
+            ts_dt = datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S.%f")
+            event_timestamps.append(ts_dt.timestamp())
+        except Exception:
+            try:
+                ts_dt = datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S")
+                event_timestamps.append(ts_dt.timestamp())
+            except Exception:
+                continue
+
+    total_events = len(events)
+    if total_events == 0:
+        return {
+            "type": "suricata_eve",
+            "metrics": {"total_alerts": 0, "unique_signatures": 0, "ioc_count": 0, "severity_1": 0, "severity_2": 0, "severity_3": 0},
+            "protocols": [],
+            "connections": [],
+            "timeline": [],
+            "alerts": [],
+            "iocs": []
+        }
+
+    # Determine dynamic bin size
+    if event_timestamps:
+        start_time = min(event_timestamps)
+        end_time = max(event_timestamps)
+        duration = round(end_time - start_time, 2)
+    else:
+        duration = 0
+        
+    use_exact = len(event_timestamps) <= 150
+    
+    if not use_exact and duration > 0:
+        if duration <= 10.0:
+            bin_size = 0.5
+        elif duration <= 60.0:
+            bin_size = 1.0
+        elif duration <= 300.0:
+            bin_size = 5.0
+        elif duration <= 1800.0:
+            bin_size = 10.0
+        elif duration <= 7200.0:
+            bin_size = 30.0
+        else:
+            bin_size = 60.0
+
+    # Process all events
     for event in events:
         try:
-            if event.get("event_type") == "alert":
+            event_type = event.get("event_type", "other")
+            src_ip = event.get("src_ip")
+            dest_ip = event.get("dest_ip")
+            
+            # Count event types for dynamic protocol distribution
+            etype_upper = event_type.upper()
+            event_types[etype_upper] = event_types.get(etype_upper, 0) + 1
+            
+            # Count IPs for IoC checking across ALL events
+            if src_ip:
+                ip_counts[src_ip] = ip_counts.get(src_ip, 0) + 1
+            if dest_ip:
+                ip_counts[dest_ip] = ip_counts.get(dest_ip, 0) + 1
+                
+            # Count connections across ALL events
+            if src_ip and dest_ip:
+                conn_key = (src_ip, dest_ip)
+                connections_raw[conn_key] = connections_raw.get(conn_key, 0) + 1
+                
+            # Count DNS queries for IoC checking
+            if event_type == "dns" and "dns" in event:
+                rrname = event["dns"].get("rrname", "").rstrip('.')
+                if rrname:
+                    dns_queries[rrname] = dns_queries.get(rrname, 0) + 1
+                    
+            # Parse timestamp for this event
+            ts_str = event.get("timestamp", "")
+            time_bin = "N/A"
+            if ts_str:
+                if '+' in ts_str:
+                    ts_clean = ts_str.split('+')[0]
+                elif '-' in ts_str and ts_str.count('-') > 2:
+                    last_dash = ts_str.rfind('-')
+                    ts_clean = ts_str[:last_dash]
+                else:
+                    ts_clean = ts_str
+                    
+                try:
+                    ts_dt = datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S.%f")
+                except Exception:
+                    try:
+                        ts_dt = datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S")
+                    except Exception:
+                        ts_dt = None
+                        
+                if ts_dt:
+                    t_val = ts_dt.timestamp()
+                    if use_exact:
+                        time_bin = round(t_val, 3)
+                    else:
+                        time_bin = int(t_val // bin_size) * bin_size
+                        
+            # Populate general timeline
+            if time_bin != "N/A":
+                if time_bin not in timeline_raw:
+                    timeline_raw[time_bin] = 0
+                timeline_raw[time_bin] += 1
+                
+            # Process alert-specific metrics
+            if event_type == "alert":
                 total_alerts += 1
                 alert_data = event["alert"]
                 severity = alert_data.get("severity", 3)
@@ -357,59 +481,64 @@ def parse_suricata_eve(filepath):
                 sig = alert_data.get("signature", "Unknown Signature")
                 signature_counts[sig] = signature_counts.get(sig, 0) + 1
                 
-                src_ip = event.get("src_ip", "N/A")
-                dest_ip = event.get("dest_ip", "N/A")
-                ip_counts[src_ip] = ip_counts.get(src_ip, 0) + 1
-                ip_counts[dest_ip] = ip_counts.get(dest_ip, 0) + 1
-                
-                # Time handling
-                ts_str = event.get("timestamp", "")
-                ts_clean = ts_str.split('+')[0].split('.')[0]
-                try:
-                    ts_dt = datetime.strptime(ts_clean, "%Y-%m-%dT%H:%M:%S")
-                    time_bin = ts_dt.strftime('%H:%M:%S')
-                except Exception:
-                    time_bin = ts_clean[-8:] if len(ts_clean) >= 8 else "N/A"
-                    
-                if time_bin not in timeline_raw:
-                    timeline_raw[time_bin] = 0
-                timeline_raw[time_bin] += 1
-                
                 alerts.append({
                     "id": alert_data.get("signature_id", 0),
                     "timestamp": ts_str,
                     "signature": sig,
                     "category": alert_data.get("category", "N/A"),
                     "severity": severity,
-                    "src_ip": src_ip,
-                    "dest_ip": dest_ip,
+                    "src_ip": src_ip or "N/A",
+                    "dest_ip": dest_ip or "N/A",
                     "src_port": event.get("src_port", "N/A"),
                     "dest_port": event.get("dest_port", "N/A"),
                     "proto": event.get("proto", "N/A")
                 })
         except Exception:
             continue
-                
+            
     # Sort alerts by timestamp descending
     alerts = sorted(alerts, key=lambda x: x["timestamp"], reverse=True)
     
     # Format severity distribution
     severity_dist = [{"name": f"Severity {k}", "count": v} for k, v in severity_counts.items() if v > 0]
     
+    # Format event types distribution
+    event_types_dist = [{"name": k, "count": v} for k, v in event_types.items()]
+    
     # Format signatures count
     sig_list = [{"name": k, "count": v} for k, v in signature_counts.items()]
     sig_list = sorted(sig_list, key=lambda x: x["count"], reverse=True)[:10]
     
+    # Format connections list
+    conn_list = []
+    for (src, dst), count in connections_raw.items():
+        conn_list.append({
+            "source": src,
+            "destination": dst,
+            "count": count
+        })
+    conn_list = sorted(conn_list, key=lambda x: x["count"], reverse=True)[:15]
+    
     # Format timeline
     timeline_list = []
+    show_ms = use_exact and duration < 5.0
+    
     for t_bin in sorted(timeline_raw.keys()):
+        if isinstance(t_bin, (int, float)):
+            if show_ms:
+                dt_str = datetime.fromtimestamp(t_bin).strftime('%H:%M:%S.%f')[:-3]
+            else:
+                dt_str = datetime.fromtimestamp(t_bin).strftime('%H:%M:%S')
+        else:
+            dt_str = str(t_bin)
+            
         timeline_list.append({
-            "time": t_bin,
+            "time": dt_str,
             "count": timeline_raw[t_bin]
         })
         
-    # Match IoCs
-    matched = match_iocs(ip_counts)
+    # Match IoCs using both IPs and DNS domains
+    matched = match_iocs(ip_counts, dns_queries)
     
     metrics = {
         "total_alerts": total_alerts,
@@ -423,11 +552,12 @@ def parse_suricata_eve(filepath):
     return {
         "type": "suricata_eve",
         "metrics": metrics,
-        "protocols": severity_dist, # map to severity distribution
-        "connections": sig_list,    # map to top rules
+        "protocols": event_types_dist if total_alerts == 0 else severity_dist, # Dynamic protocol distribution
+        "connections": conn_list if total_alerts == 0 else sig_list,          # Dynamic connections/rules
         "timeline": timeline_list,
         "alerts": alerts[:100],     # Return top 100 alerts for performance
-        "iocs": matched
+        "iocs": matched,
+        "has_alerts": total_alerts > 0
     }
 
 # Suricata fast.log parser
@@ -522,7 +652,8 @@ def parse_suricata_fast(filepath):
         "connections": sig_list,    # map to top rules
         "timeline": timeline_list,
         "alerts": alerts[:100],     # Return top 100 alerts
-        "iocs": matched
+        "iocs": matched,
+        "has_alerts": True
     }
 
 # Main routes
@@ -542,6 +673,11 @@ def upload_file():
         
     if file:
         filename = secure_filename(file.filename)
+        if 'suricata.log' in filename.lower() or 'stats.log' in filename.lower() or 'stats' in filename.lower():
+            return jsonify({
+                "error": "Berkas ini adalah log sistem/statistik Suricata. Silakan unggah berkas 'eve.json' atau 'fast.log' untuk memvisualisasikan lalu lintas jaringan atau alert keamanan."
+            }), 400
+            
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         

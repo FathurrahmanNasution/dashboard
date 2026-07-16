@@ -60,15 +60,15 @@ def generate_mock_suricata_logs():
         fast_line = f"{time_fast}  [**] [1:{sig['id']}:1] {sig['name']} [**] [Classification: {sig['category']}] [Priority: {sig['severity']}] {{TCP}} {src_ip}:{src_port} -> {dest_ip}:{dest_port}"
         alerts_fast.append(fast_line)
         
-    with open("eve.json", "w") as f:
+    with open("mock_eve.json", "w") as f:
         for alert in alerts_eve:
             f.write(json.dumps(alert) + "\n")
             
-    with open("fast.log", "w") as f:
+    with open("mock_fast.log", "w") as f:
         for line in alerts_fast:
             f.write(line + "\n")
             
-    print("Generated mock Suricata logs: eve.json and fast.log")
+    print("Generated mock Suricata logs: mock_eve.json and mock_fast.log")
 
 def generate_mock_pcap():
     try:
@@ -109,8 +109,8 @@ def generate_mock_pcap():
         pkt.time = epoch_time
         packets.append(pkt)
         
-    wrpcap("test.pcap", packets)
-    print("Generated mock PCAP: test.pcap")
+    wrpcap("mock_test.pcap", packets)
+    print("Generated mock PCAP: mock_test.pcap")
 
 def generate_mock_ioc_db():
     iocs = {

@@ -103,8 +103,8 @@
                 <div class="quick-test-section">
                     <p class="quick-test-hint">Tidak memiliki file log? Gunakan file pengujian yang telah digenerate:</p>
                     <div class="quick-test-buttons">
-                        <button class="btn btn-outline" onclick="loadMockFile('test.pcap')">Gunakan test.pcap (Trafik Jaringan)</button>
-                        <button class="btn btn-outline" onclick="loadMockFile('eve.json')">Gunakan eve.json (Alert Suricata)</button>
+                        <button class="btn btn-outline" onclick="loadMockFile('mock_test.pcap')">Gunakan test.pcap (Trafik Jaringan)</button>
+                        <button class="btn btn-outline" onclick="loadMockFile('mock_eve.json')">Gunakan eve.json (Alert Suricata)</button>
                     </div>
                 </div>
             </div>
@@ -276,6 +276,6 @@
     <!-- Notification Toast -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=1.0.2"></script>
 </body>
 </html>

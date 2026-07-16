@@ -86,5 +86,8 @@ uploads/*
 eve.json
 fast.log
 test.pcap
+mock_eve.json
+mock_fast.log
+mock_test.pcap
 suricata_real_eve.json
 ioc_list.json

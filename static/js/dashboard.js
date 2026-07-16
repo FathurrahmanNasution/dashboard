@@ -280,9 +280,14 @@ function renderDashboard(data) {
             iocMetric.className = 'metric-value';
         }
         
-        // Update Chart titles
-        document.getElementById('chart-title-1').textContent = 'Distribusi Tingkat Bahaya (Severity)';
-        document.getElementById('chart-title-2').textContent = 'Aturan Keamanan Paling Sering Terpicu (Top 10)';
+        // Update Chart titles based on whether alerts were found
+        if (data.has_alerts) {
+            document.getElementById('chart-title-1').textContent = 'Distribusi Tingkat Bahaya (Severity)';
+            document.getElementById('chart-title-2').textContent = 'Aturan Keamanan Paling Sering Terpicu (Top 10)';
+        } else {
+            document.getElementById('chart-title-1').textContent = 'Distribusi Tipe Event Jaringan';
+            document.getElementById('chart-title-2').textContent = 'Koneksi Paling Aktif (Berdasarkan Jumlah Event)';
+        }
         
         switchTab('overview');
         
@@ -311,7 +316,7 @@ function renderProtocolChart(dataList, type) {
         const labels = dataList.map(item => item.name);
         const dataValues = dataList.map(item => item.count);
         
-        const colors = type === 'packets' 
+        const colors = (type === 'packets' || type === 'events') 
             ? ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#6366f1'] 
             : ['#ef4444', '#f59e0b', '#3b82f6'];
             
@@ -342,7 +347,7 @@ function renderProtocolChart(dataList, type) {
             }
         });
     } else {
-        const colors = type === 'packets' 
+        const colors = (type === 'packets' || type === 'events') 
             ? ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#6366f1'] 
             : ['#ef4444', '#f59e0b', '#3b82f6'];
         renderSvgDoughnut(wrapper, dataList, colors);
@@ -367,6 +372,11 @@ function renderConnectionChart(dataList, type) {
             dataValues = dataList.map(item => item.bytes / 1024);
             labelName = 'Volume Lalu Lintas (KB)';
             barColor = 'rgba(6, 182, 212, 0.85)';
+        } else if (type === 'events') {
+            labels = dataList.map(item => `${item.source.substring(0,15)} -> ${item.destination.substring(0,15)}`);
+            dataValues = dataList.map(item => item.count);
+            labelName = 'Jumlah Event';
+            barColor = 'rgba(16, 185, 129, 0.85)';
         } else {
             labels = dataList.map(item => item.name.length > 35 ? item.name.substring(0, 35) + '...' : item.name);
             dataValues = dataList.map(item => item.count);
@@ -551,6 +561,11 @@ function renderAlertsCategoryChart(dataList) {
     const wrapper = document.getElementById('alertCategoryChart').parentElement;
     wrapper.innerHTML = '<canvas id="alertCategoryChart"></canvas>';
     
+    if (!dataList || dataList.length === 0 || (dataList.length > 0 && !dataList[0].name)) {
+        wrapper.innerHTML = '<div class="no-data-msg">Tidak ada alert terdeteksi</div>';
+        return;
+    }
+    
     if (window.Chart) {
         const ctx = document.getElementById('alertCategoryChart').getContext('2d');
         if (alertCategoryChartInstance) {
@@ -675,6 +690,10 @@ function renderSvgBar(container, dataList, type) {
             label = `${item.source} ➔ ${item.destination}`;
             val = item.bytes;
             displayVal = formatBytes(val);
+        } else if (type === 'events') {
+            label = `${item.source} ➔ ${item.destination}`;
+            val = item.count;
+            displayVal = `${val} event`;
         } else {
             label = item.name;
             val = item.count;
@@ -907,8 +926,13 @@ function switchTab(paneId) {
                 renderProtocolChart(currentData.protocols, 'packets');
                 renderConnectionChart(currentData.connections, 'bytes');
             } else {
-                renderProtocolChart(currentData.protocols, 'alerts');
-                renderConnectionChart(currentData.connections, 'alerts');
+                if (currentData.has_alerts) {
+                    renderProtocolChart(currentData.protocols, 'alerts');
+                    renderConnectionChart(currentData.connections, 'alerts');
+                } else {
+                    renderProtocolChart(currentData.protocols, 'events');
+                    renderConnectionChart(currentData.connections, 'events');
+                }
             }
         } else if (paneId === 'timeline') {
             if (currentData.type === 'pcap') {
