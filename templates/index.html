@@ -101,10 +101,11 @@
                 <h2>Belum Ada Data yang Dianalisis</h2>
                 <p>Silakan unggah file packet capture (.pcap / .pcapng) atau log Suricata (eve.json / fast.log) menggunakan panel unggah di sebelah kiri untuk melihat ringkasan keamanan dan visualisasi trafik secara real-time.</p>
                 <div class="quick-test-section">
-                    <p class="quick-test-hint">Tidak memiliki file log? Gunakan file pengujian yang telah digenerate:</p>
+                    <p class="quick-test-hint">Tidak memiliki file log? Gunakan file pengujian simulasi atau capture asli:</p>
                     <div class="quick-test-buttons">
-                        <button class="btn btn-outline" onclick="loadMockFile('mock_test.pcap')">Gunakan test.pcap (Trafik Jaringan)</button>
-                        <button class="btn btn-outline" onclick="loadMockFile('mock_eve.json')">Gunakan eve.json (Alert Suricata)</button>
+                        <button class="btn btn-outline" onclick="loadMockFile('mock_test.pcap')">Gunakan test.pcap (Simulasi)</button>
+                        <button class="btn btn-outline" onclick="loadMockFile('mock_eve.json')">Gunakan eve.json (Simulasi)</button>
+                        <button class="btn btn-outline" style="border-color: var(--accent-blue); color: var(--accent-blue);" onclick="loadMockFile('20250129-dns-with-additionals.pcap')">Gunakan dns-additionals.pcap (PCAP Asli)</button>
                     </div>
                 </div>
             </div>
@@ -112,6 +113,12 @@
             <!-- Dashboard Content Panels (Hidden initially) -->
             <div class="dashboard-grid" id="dashboard-content" style="display: none;">
                 
+                <!-- Warnings and Truncation Banners -->
+                <div class="warning-banner glass border-orange" id="warning-banner" style="display: none; width: 100%; margin-bottom: 20px; background: rgba(255, 165, 0, 0.1); border-left: 5px solid orange; padding: 15px; border-radius: 8px;">
+                    <h4 style="margin-top: 0; color: orange; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-triangle-exclamation"></i> Peringatan Analisis Data</h4>
+                    <ul id="warning-list" style="margin: 5px 0 0 20px; padding: 0; color: #e0e0e0; font-size: 0.95rem; line-height: 1.4;"></ul>
+                </div>
+
                 <!-- Metrics Summary row -->
                 <section class="metrics-row">
                     <div class="metric-card glass card-glow-purple">
@@ -183,10 +190,16 @@
 
                     <!-- Tab: Timeline -->
                     <div class="tab-pane" id="timeline">
-                        <div class="chart-card glass width-full">
-                            <h3>Timeline Komunikasi Jaringan</h3>
+                        <div class="chart-card glass width-full" style="margin-bottom: 20px;">
+                            <h3 id="timeline-chart-title">Timeline Komunikasi Jaringan (Semua Event)</h3>
                             <div class="chart-wrapper timeline-wrapper">
                                 <canvas id="timelineChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass width-full" id="alert-timeline-card" style="display: none;">
+                            <h3>Timeline Kejadian Keamanan (Hanya Alert)</h3>
+                            <div class="chart-wrapper timeline-wrapper">
+                                <canvas id="alertTimelineChart"></canvas>
                             </div>
                         </div>
                     </div>

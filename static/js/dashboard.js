@@ -1,5 +1,16 @@
 // Aegis NetSec Dashboard Javascript Logic
 
+// Safe escaping helper for XSS prevention (P1-6)
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Chart Instances
 let protocolChartInstance = null;
 let connectionChartInstance = null;
@@ -179,7 +190,7 @@ function loadMockFile(filename) {
         const uploadIcon = document.querySelector('.upload-icon');
         
         nameEl.textContent = filename;
-        sizeEl.textContent = filename.endsWith('.pcap') ? "14.5 KB" : "8.2 KB";
+        sizeEl.textContent = formatBytes(data.file_size || 0);
         
         uploadIcon.style.display = 'none';
         dropzoneText.style.display = 'none';
@@ -216,6 +227,34 @@ function renderDashboard(data) {
     // Enable Exports
     document.getElementById('btn-export-csv').disabled = false;
     document.getElementById('btn-export-pdf').disabled = false;
+    
+    // Warnings and Truncation Banners (P2-8 & P1-7)
+    const warningBanner = document.getElementById('warning-banner');
+    const warningList = document.getElementById('warning-list');
+    warningList.innerHTML = '';
+    let hasWarnings = false;
+    
+    if (data.truncated) {
+        hasWarnings = true;
+        const li = document.createElement('li');
+        li.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> <strong>PCAP Truncated:</strong> File PCAP terlalu besar (> 50.000 paket) dan telah dipotong secara otomatis untuk menjaga performa dashboard.';
+        warningList.appendChild(li);
+    }
+    
+    if (data.warnings && data.warnings.length > 0) {
+        hasWarnings = true;
+        data.warnings.forEach(warn => {
+            const li = document.createElement('li');
+            li.textContent = warn;
+            warningList.appendChild(li);
+        });
+    }
+    
+    if (hasWarnings) {
+        warningBanner.style.display = 'block';
+    } else {
+        warningBanner.style.display = 'none';
+    }
     
     const isPcap = data.type === 'pcap';
     
@@ -292,7 +331,7 @@ function renderDashboard(data) {
         switchTab('overview');
         
         // Alert tab specifics
-        renderAlertsCategoryChart(data.connections);
+        renderAlertsCategoryChart(data.categories);
         filteredAlerts = [...data.alerts];
         alertPage = 1;
         renderAlertsTable();
@@ -498,16 +537,16 @@ function renderTimelineChart(dataList, fileType) {
             const alertData = displayList.map(item => item.count);
             dataset = [
                 {
-                    label: 'Alert Frekuensi',
+                    label: 'Event Frekuensi (Semua Tipe)',
                     data: alertData,
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    borderColor: '#8b5cf6',
+                    backgroundColor: 'rgba(139, 92, 246, 0.08)',
                     fill: true,
                     tension: 0.3,
                     yAxisID: 'y',
                     pointRadius: 5,
                     pointHoverRadius: 7,
-                    pointBackgroundColor: '#ef4444'
+                    pointBackgroundColor: '#8b5cf6'
                 }
             ];
         }
@@ -556,12 +595,97 @@ function renderTimelineChart(dataList, fileType) {
     }
 }
 
+// Chart: Alert-Only Timeline
+let alertTimelineChartInstance = null;
+function renderAlertTimelineChart(dataList) {
+    const wrapper = document.getElementById('alertTimelineChart').parentElement;
+    wrapper.innerHTML = '<canvas id="alertTimelineChart"></canvas>';
+    
+    let displayList = [...dataList];
+    if (dataList.length === 1) {
+        const singlePoint = dataList[0];
+        const timeParts = singlePoint.time.split(':');
+        if (timeParts.length === 3) {
+            const h = parseInt(timeParts[0]);
+            const m = parseInt(timeParts[1]);
+            const s = parseInt(timeParts[2]);
+            
+            const beforeDate = new Date();
+            beforeDate.setHours(h, m, s - 10);
+            const beforeTimeStr = beforeDate.toTimeString().split(' ')[0];
+            
+            const afterDate = new Date();
+            afterDate.setHours(h, m, s + 10);
+            const afterTimeStr = afterDate.toTimeString().split(' ')[0];
+            
+            displayList.unshift({ time: beforeTimeStr, count: 0 });
+            displayList.push({ time: afterTimeStr, count: 0 });
+        }
+    }
+    
+    if (window.Chart) {
+        const ctx = document.getElementById('alertTimelineChart').getContext('2d');
+        if (alertTimelineChartInstance) {
+            alertTimelineChartInstance.destroy();
+        }
+        
+        const labels = displayList.map(item => item.time);
+        const alertData = displayList.map(item => item.count);
+        
+        const dataset = [
+            {
+                label: 'Frekuensi Alert Keamanan',
+                data: alertData,
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                fill: true,
+                tension: 0.3,
+                yAxisID: 'y',
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#ef4444'
+            }
+        ];
+        
+        alertTimelineChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: dataset
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#9aa2b5', font: { family: 'Outfit' } }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                        ticks: { color: '#9aa2b5', font: { family: 'Outfit' } }
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                        ticks: { color: '#9aa2b5', font: { family: 'Outfit' } },
+                        title: { display: true, text: 'Jumlah Alert', color: '#9aa2b5' }
+                    }
+                }
+            }
+        });
+    } else {
+        renderSvgTimeline(wrapper, displayList, 'suricata_eve');
+    }
+}
+
 // Chart: Suricata Alert Categories in Sidebar
 function renderAlertsCategoryChart(dataList) {
     const wrapper = document.getElementById('alertCategoryChart').parentElement;
     wrapper.innerHTML = '<canvas id="alertCategoryChart"></canvas>';
     
-    if (!dataList || dataList.length === 0 || (dataList.length > 0 && !dataList[0].name)) {
+    if (!dataList || dataList.length === 0) {
         wrapper.innerHTML = '<div class="no-data-msg">Tidak ada alert terdeteksi</div>';
         return;
     }
@@ -573,7 +697,10 @@ function renderAlertsCategoryChart(dataList) {
         }
         
         const topRules = dataList.slice(0, 5);
-        const labels = topRules.map(item => item.name.length > 20 ? item.name.substring(0, 20) + '...' : item.name);
+        const labels = topRules.map(item => {
+            const name = item.name ? item.name.trim() : "N/A";
+            return name.length > 20 ? name.substring(0, 20) + '...' : name;
+        });
         const dataValues = topRules.map(item => item.count);
         
         alertCategoryChartInstance = new Chart(ctx, {
@@ -658,9 +785,10 @@ function renderSvgDoughnut(container, dataList, colors) {
     dataList.forEach((item, idx) => {
         const percent = (item.count / total * 100).toFixed(1);
         const color = colors[idx % colors.length];
-        legendHtml += `<div class="legend-item" title="${item.name}: ${item.count}">
+        const name = item.name ? item.name.trim() : "N/A";
+        legendHtml += `<div class="legend-item" title="${name}: ${item.count}">
             <span class="legend-dot" style="background-color: ${color}"></span>
-            <span class="legend-label">${item.name.length > 18 ? item.name.substring(0, 16) + '..' : item.name} (${percent}%)</span>
+            <span class="legend-label">${name.length > 18 ? name.substring(0, 16) + '..' : name} (${percent}%)</span>
         </div>`;
     });
     legendHtml += '</div>';
@@ -834,15 +962,15 @@ function renderAlertsTable() {
         const sigShort = alert.signature.length > 50 ? alert.signature.substring(0, 50) + '...' : alert.signature;
         
         tr.innerHTML = `
-            <td>${timeShort}</td>
-            <td title="${alert.signature}">
-                <div style="font-weight: 500;">${sigShort}</div>
-                <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">ID Aturan: ${alert.id} | Klasifikasi: ${alert.category}</div>
+            <td>${escapeHtml(timeShort)}</td>
+            <td title="${escapeHtml(alert.signature)}">
+                <div style="font-weight: 500;">${escapeHtml(sigShort)}</div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">ID Aturan: ${escapeHtml(alert.id)} | Klasifikasi: ${escapeHtml(alert.category)}</div>
             </td>
-            <td><span class="severity-badge severity-${alert.severity}">Severity ${alert.severity}</span></td>
-            <td>${alert.src_ip}:${alert.src_port}</td>
-            <td>${alert.dest_ip}:${alert.dest_port}</td>
-            <td><span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">${alert.proto}</span></td>
+            <td><span class="severity-badge severity-${escapeHtml(alert.severity)}">Severity ${escapeHtml(alert.severity)}</span></td>
+            <td>${escapeHtml(alert.src_ip)}:${escapeHtml(alert.src_port)}</td>
+            <td>${escapeHtml(alert.dest_ip)}:${escapeHtml(alert.dest_port)}</td>
+            <td><span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">${escapeHtml(alert.proto)}</span></td>
         `;
         tbody.appendChild(tr);
     });
@@ -879,11 +1007,11 @@ function renderIoCTable(iocs) {
         else if (ioc.threat_level.toLowerCase() === 'medium') badgeColorClass = 'threat-medium';
         
         tr.innerHTML = `
-            <td style="font-weight: 600; color: var(--accent-blue);">${ioc.ioc}</td>
-            <td>${ioc.type}</td>
-            <td><span class="threat-level-badge ${badgeColorClass}">${ioc.threat_level}</span></td>
-            <td style="white-space: normal; line-height: 1.4;">${ioc.description}</td>
-            <td style="text-align: center; font-weight: 700;">${ioc.count}</td>
+            <td style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(ioc.ioc)}</td>
+            <td>${escapeHtml(ioc.type)}</td>
+            <td><span class="threat-level-badge ${escapeHtml(badgeColorClass)}">${escapeHtml(ioc.threat_level)}</span></td>
+            <td style="white-space: normal; line-height: 1.4;">${escapeHtml(ioc.description)}</td>
+            <td style="text-align: center; font-weight: 700;">${escapeHtml(ioc.count)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -935,13 +1063,27 @@ function switchTab(paneId) {
                 }
             }
         } else if (paneId === 'timeline') {
+            const alertTimelineCard = document.getElementById('alert-timeline-card');
+            const timelineChartTitle = document.getElementById('timeline-chart-title');
+            
             if (currentData.type === 'pcap') {
+                timelineChartTitle.textContent = 'Timeline Komunikasi Jaringan';
+                alertTimelineCard.style.display = 'none';
                 renderTimelineChart(currentData.timeline, 'pcap');
             } else {
-                renderTimelineChart(currentData.timeline, 'alerts');
+                if (currentData.timeline_alerts && currentData.timeline_alerts.length > 0) {
+                    timelineChartTitle.textContent = 'Timeline Semua Event Keamanan (Semua Tipe)';
+                    alertTimelineCard.style.display = 'block';
+                    renderTimelineChart(currentData.timeline, 'suricata_eve');
+                    renderAlertTimelineChart(currentData.timeline_alerts);
+                } else {
+                    timelineChartTitle.textContent = 'Timeline Event Keamanan';
+                    alertTimelineCard.style.display = 'none';
+                    renderTimelineChart(currentData.timeline, 'suricata_eve');
+                }
             }
         } else if (paneId === 'alerts-tab') {
-            renderAlertsCategoryChart(currentData.connections);
+            renderAlertsCategoryChart(currentData.categories);
         }
     }
 }
@@ -1004,8 +1146,8 @@ function showToast(title, message, type = 'success') {
     toast.innerHTML = `
         <i class="fa-solid ${iconClass}" style="font-size: 18px;"></i>
         <div>
-            <div style="font-weight: 600;">${title}</div>
-            <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">${message}</div>
+            <div style="font-weight: 600;">${escapeHtml(title)}</div>
+            <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">${escapeHtml(message)}</div>
         </div>
     `;
     

@@ -1,0 +1,36 @@
+{
+    "ips": [
+        {
+            "ip": "185.220.101.5",
+            "type": "Tor Exit Node",
+            "description": "Known Tor exit node used in credential stuffing",
+            "threat_level": "Medium"
+        },
+        {
+            "ip": "45.227.254.12",
+            "type": "Botnet C2",
+            "description": "Active Mirai scanner/C2 node",
+            "threat_level": "High"
+        },
+        {
+            "ip": "198.51.100.45",
+            "type": "Spam/Scanner",
+            "description": "IP flagged for active SSH brute forcing attempts",
+            "threat_level": "Low"
+        }
+    ],
+    "domains": [
+        {
+            "domain": "evil-c2-domain.net",
+            "type": "Malware C2",
+            "description": "Domain associated with Cobalt Strike beaconing",
+            "threat_level": "High"
+        },
+        {
+            "domain": "malware-c2-server.com",
+            "type": "Cryptominer",
+            "description": "Public Monero mining pool domain",
+            "threat_level": "Medium"
+        }
+    ]
+}

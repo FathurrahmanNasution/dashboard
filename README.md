@@ -78,6 +78,12 @@ pip install -r requirements.txt
 ```
 *Catatan: Dependensi utama yang akan diinstal meliputi `Flask`, `scapy` (untuk memproses paket capture), `fpdf2` (untuk mencetak PDF), dan `pandas` (untuk pengolahan data CSV).*
 
+### Langkah 5: Membuat Berkas Pengujian/Simulasi (Opsional)
+Untuk menghasilkan berkas simulasi pengujian (`mock_test.pcap`, `mock_eve.json`, `mock_fast.log`, dan `ioc_list.json`) secara otomatis di komputer lokal Anda, jalankan skrip generator berikut:
+```bash
+python generate_test_data.py
+```
+
 ---
 
 ## Cara Menjalankan Aplikasi
@@ -97,8 +103,9 @@ pip install -r requirements.txt
 
 ### A. Uji Coba Simulasi Cepat (Quick Test)
 Jika Anda tidak memiliki file log keamanan untuk diuji, Anda bisa menggunakan tombol simulasi yang terletak di tengah dashboard:
-1.  Klik **"Gunakan test.pcap (Trafik Jaringan)"** untuk memuat simulasi trafik paket data.
-2.  Klik **"Gunakan eve.json (Alert Suricata)"** untuk memuat simulasi data peringatan serangan IDS Suricata.
+1.  Klik **"Gunakan test.pcap (Simulasi)"** untuk memuat berkas simulasi trafik paket data PCAP.
+2.  Klik **"Gunakan eve.json (Simulasi)"** untuk memuat berkas simulasi alert serangan IDS Suricata.
+3.  Klik **"Gunakan dns-additionals.pcap (PCAP Asli)"** untuk memuat capture kueri DNS dari lalu lintas jaringan nyata.
 
 ### B. Menganalisis Berkas Anda Sendiri
 1.  Pada panel sebelah kiri (**Unggah File Analisis**), seret berkas Anda ke area putus-putus atau klik tombol **Pilih File**.
@@ -115,13 +122,25 @@ Jika Anda tidak memiliki file log keamanan untuk diuji, Anda bisa menggunakan to
 *   **Tab Indikator Kompromi (IoC)**: Menampilkan tabel daftar IP atau domain mencurigakan yang terdeteksi di dalam jaringan Anda berdasarkan database `ioc_list.json`.
 
 ### D. Mengustomisasi Database Deteksi Ancaman (IoC)
-Anda dapat memodifikasi berkas [ioc_list.json](file:///d:/dashboard/ioc_list.json) di folder proyek untuk memperbarui daftar hitam ancaman (*threat list*) Anda sendiri. Cukup tambahkan entri IP atau domain ke dalam array `"ips"` atau `"domains"` dengan format JSON sebagai berikut:
+Anda dapat memodifikasi berkas [ioc_list.json](file:///c:/Users/PC/Documents/dashboard/ioc_list.json) di folder proyek untuk memperbarui daftar hitam ancaman (*threat list*) Anda sendiri. Cukup tambahkan entri IP atau domain ke dalam array `"ips"` atau `"domains"` dengan format JSON sebagai berikut:
 ```json
 {
-    "ip": "8.8.8.8",
-    "type": "IP Flagged",
-    "description": "Contoh deskripsi deteksi ancaman",
-    "threat_level": "High"
+  "ips": [
+    {
+      "ip": "8.8.8.8",
+      "type": "IP Flagged",
+      "description": "Contoh deskripsi deteksi ancaman",
+      "threat_level": "High"
+    }
+  ],
+  "domains": [
+    {
+      "domain": "evil-c2-domain.net",
+      "type": "C2 Domain",
+      "description": "Contoh domain Command and Control",
+      "threat_level": "High"
+    }
+  ]
 }
 ```
 
@@ -129,3 +148,46 @@ Anda dapat memodifikasi berkas [ioc_list.json](file:///d:/dashboard/ioc_list.jso
 Setelah berkas berhasil dianalisis:
 *   Klik tombol **Ekspor CSV** di panel kiri untuk mengunduh data analisis tabular mentah.
 *   Klik tombol **Ekspor PDF** untuk mengunduh berkas PDF formal yang mencakup ringkasan metrik, tabel deteksi bahaya, serta data distribusi trafik yang bersih dan siap dipresentasikan.
+
+---
+
+## Menjalankan Analisis Jaringan Asli di Windows (Live Capture & Suricata)
+
+Karena **Npcap** dan **Suricata** telah berhasil diinstal di sistem Anda, sekarang Anda dapat melakukan sniffing lalu lintas jaringan secara langsung (*live capture*) dan menjalankan analisis Suricata secara nyata.
+
+### A. Melakukan Sniffing Lalu Lintas Jaringan dengan Scapy (Live Capture)
+Anda dapat menggunakan Scapy untuk merekam lalu lintas jaringan nyata dari kartu jaringan (Network Interface Card/NIC) Anda.
+
+Untuk melihat daftar nama kartu jaringan yang tersedia di komputer Anda, jalankan perintah berikut dalam terminal (pastikan venv Anda aktif):
+```bash
+python -c "from scapy.all import get_if_list; print(get_if_list())"
+```
+
+Untuk merekam lalu lintas (misalnya sebanyak 100 paket) dan menyimpannya ke berkas PCAP:
+```python
+from scapy.all import sniff, wrpcap
+
+# Merekam lalu lintas jaringan
+packets = sniff(count=100, timeout=10)
+wrpcap("live_capture.pcap", packets)
+```
+Unggah berkas `live_capture.pcap` yang dihasilkan langsung ke Aegis NetSec Dashboard untuk dianalisis.
+
+### B. Menjalankan Suricata Secara Nyata di Windows
+Untuk mempermudah jalannya Suricata tanpa harus mengingat perintah yang panjang, kami telah menyediakan skrip pembantu **`run_suricata.py`** di dalam folder proyek ini.
+
+Skrip ini secara otomatis mendeteksi lokasi instalasi Suricata, membaca daftar interface jaringan yang tersedia di PC Anda, dan mengonfigurasi Suricata agar menyimpan output berkas `eve.json` dan `fast.log` **langsung ke folder proyek tempat skrip ini berada** (sangat dinamis untuk siapa pun yang mengkloning proyek ini).
+
+Cara menjalankannya:
+1. Buka **Command Prompt** atau **PowerShell** sebagai **Administrator** (*Run as Administrator*).
+2. Masuk ke direktori hasil klon dashboard Anda.
+3. Aktifkan virtual environment Anda (`.\venv\Scripts\Activate.ps1`).
+4. Jalankan perintah berikut:
+   ```bash
+   python run_suricata.py
+   ```
+5. Pilih nomor interface jaringan aktif Anda dari menu yang ditampilkan.
+6. Suricata akan mulai mendeteksi lalu lintas jaringan secara real-time dan log deteksi (`eve.json`) akan otomatis dibuat di dalam folder proyek Anda!
+7. Unggah berkas `eve.json` tersebut ke dashboard untuk visualisasi deteksi ancaman secara instan.
+
+
