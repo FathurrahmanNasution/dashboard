@@ -154,6 +154,15 @@ def clean_pdf_text(text):
         text = str(text)
     return text.encode('latin-1', errors='replace').decode('latin-1')
 
+def truncate_pdf_text(text, max_chars):
+    """Truncate text to max_chars and add ellipsis if needed, then clean for PDF."""
+    if text is None:
+        return ""
+    text = str(text)
+    if len(text) > max_chars:
+        text = text[:max_chars - 2] + '..'  # -2 to leave room for '..'
+    return clean_pdf_text(text)
+
 def match_iocs(ip_counts, domains_observed=None):
     ioc_db = load_ioc_database()
     matched_iocs = []
@@ -1269,21 +1278,22 @@ def export_pdf():
         pdf.set_text_color(30, 30, 30)
         pdf.ln(2)
         
+        # Column widths: IoC(65) + Type(25) + ThreatLvl(22) + Desc(58) + Matches(10) = 180
         pdf.set_fill_color(255, 230, 230)
         pdf.set_font('helvetica', 'B', 9)
-        pdf.cell(40, 7, clean_pdf_text("IoC Indicator"), 1, 0, 'L', True)
-        pdf.cell(30, 7, clean_pdf_text("Type"), 1, 0, 'L', True)
-        pdf.cell(20, 7, clean_pdf_text("Threat Level"), 1, 0, 'L', True)
-        pdf.cell(75, 7, clean_pdf_text("Description"), 1, 0, 'L', True)
-        pdf.cell(15, 7, clean_pdf_text("Matches"), 1, 1, 'C', True)
-        pdf.set_font('helvetica', '', 9)
+        pdf.cell(65, 7, clean_pdf_text("IoC Indicator"), 1, 0, 'L', True)
+        pdf.cell(25, 7, clean_pdf_text("Type"), 1, 0, 'L', True)
+        pdf.cell(22, 7, clean_pdf_text("Threat Level"), 1, 0, 'L', True)
+        pdf.cell(58, 7, clean_pdf_text("Description"), 1, 0, 'L', True)
+        pdf.cell(10, 7, clean_pdf_text("#"), 1, 1, 'C', True)
+        pdf.set_font('helvetica', '', 8)
         
         for ioc in analysis_data["iocs"]:
-            pdf.cell(40, 7, clean_pdf_text(ioc["ioc"]), 1, 0, 'L')
-            pdf.cell(30, 7, clean_pdf_text(ioc["type"]), 1, 0, 'L')
-            pdf.cell(20, 7, clean_pdf_text(ioc["threat_level"]), 1, 0, 'L')
-            pdf.cell(75, 7, clean_pdf_text(ioc["description"]), 1, 0, 'L')
-            pdf.cell(15, 7, clean_pdf_text(str(ioc["count"])), 1, 1, 'C')
+            pdf.cell(65, 6, truncate_pdf_text(ioc["ioc"], 38), 1, 0, 'L')
+            pdf.cell(25, 6, truncate_pdf_text(ioc["type"], 18), 1, 0, 'L')
+            pdf.cell(22, 6, truncate_pdf_text(ioc["threat_level"], 12), 1, 0, 'L')
+            pdf.cell(58, 6, truncate_pdf_text(ioc["description"], 38), 1, 0, 'L')
+            pdf.cell(10, 6, clean_pdf_text(str(ioc["count"])), 1, 1, 'C')
     else:
         pdf.set_text_color(0, 128, 0)
         pdf.cell(0, 10, clean_pdf_text("No known threat intelligence indicators matched in traffic."), ln=True)
@@ -1357,13 +1367,14 @@ def export_pdf():
         pdf.set_font('helvetica', '', 10)
         pdf.ln(2)
         
+        # Column widths: Timestamp(35) + Signature(65) + Severity(15) + SrcIP(30) + DstIP(25) + Port(10) = 180
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font('helvetica', 'B', 8)
         pdf.cell(35, 7, clean_pdf_text("Timestamp"), 1, 0, 'L', True)
-        pdf.cell(60, 7, clean_pdf_text("Signature"), 1, 0, 'L', True)
+        pdf.cell(65, 7, clean_pdf_text("Signature"), 1, 0, 'L', True)
         pdf.cell(15, 7, clean_pdf_text("Severity"), 1, 0, 'C', True)
         pdf.cell(30, 7, clean_pdf_text("Source IP"), 1, 0, 'L', True)
-        pdf.cell(30, 7, clean_pdf_text("Destination IP"), 1, 0, 'L', True)
+        pdf.cell(25, 7, clean_pdf_text("Destination IP"), 1, 0, 'L', True)
         pdf.cell(10, 7, clean_pdf_text("Port"), 1, 1, 'C', True)
         pdf.set_font('helvetica', '', 7)
         
@@ -1373,19 +1384,22 @@ def export_pdf():
             # truncate signature
             sig_short = a["signature"][:35] + "..." if len(a["signature"]) > 38 else a["signature"]
             
-            pdf.cell(35, 6, clean_pdf_text(ts_short), 1, 0, 'L')
-            pdf.cell(60, 6, clean_pdf_text(sig_short), 1, 0, 'L')
-            pdf.cell(15, 6, clean_pdf_text(f"Priority {a['severity']}"), 1, 0, 'C')
-            pdf.cell(30, 6, clean_pdf_text(f"{a['src_ip']}:{a['src_port']}"), 1, 0, 'L')
-            pdf.cell(30, 6, clean_pdf_text(f"{a['dest_ip']}:{a['dest_port']}"), 1, 0, 'L')
-            pdf.cell(10, 6, clean_pdf_text(str(a["proto"])), 1, 1, 'C')
+            pdf.cell(35, 6, truncate_pdf_text(ts_short, 22), 1, 0, 'L')
+            pdf.cell(65, 6, truncate_pdf_text(sig_short, 48), 1, 0, 'L')
+            pdf.cell(15, 6, clean_pdf_text(f"P{a['severity']}"), 1, 0, 'C')
+            pdf.cell(30, 6, truncate_pdf_text(f"{a['src_ip']}:{a['src_port']}", 22), 1, 0, 'L')
+            pdf.cell(25, 6, truncate_pdf_text(f"{a['dest_ip']}:{a['dest_port']}", 18), 1, 0, 'L')
+            pdf.cell(10, 6, truncate_pdf_text(str(a["proto"]), 6), 1, 1, 'C')
             
-    # Save PDF to temporary byte stream
-    pdf_output = pdf.output(dest='S')
+    # Save PDF to byte stream (FPDF2 >= 2.2.0 returns bytes from output())
+    pdf_output = pdf.output()  # returns bytes in modern fpdf2
+    if isinstance(pdf_output, bytearray):
+        pdf_output = bytes(pdf_output)
     
     response = make_response(pdf_output)
     response.headers["Content-Disposition"] = f"attachment; filename=report_{data_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    response.headers["Content-type"] = "application/pdf"
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Length"] = str(len(pdf_output))
     return response
 
 if __name__ == '__main__':
